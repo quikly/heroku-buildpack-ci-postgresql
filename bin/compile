@@ -84,6 +84,7 @@ package_download "postgresql" "${POSTGRESQL_VERSION}" "${BUILD_DIR}/${VENDORED_P
 echo "-----> Initializing database"
 export PGHOST=/tmp
 DATABASE=postgres_buildpack_db
+SECONDARY_DATABASE=postgres_buildpack_secondary_db
 
 # Set up and configure a database for Heroku CI
 user="u$(</dev/urandom tr -dc 'a-z0-9' | head -c 13)"
@@ -112,6 +113,12 @@ DATABASE_URL="postgres://${user}:${password}@localhost:5432/${DATABASE}"
 echo "export PGHOST=$PGHOST" >> $BUILDPACK_DIR/export
 echo "export DATABASE_URL=$DATABASE_URL" >> $BUILDPACK_DIR/export
 
+if [ -f "$ENV_DIR/HEROKU_CI_POSTGRES_SECONDARY_DB" ]; then
+  createdb --owner $user $SECONDARY_DATABASE | indent
+  SECONDARY_DATABASE_URL="postgres://${user}:${password}@localhost:5432/${SECONDARY_DATABASE}"
+  echo "export SECONDARY_DATABASE_URL=$SECONDARY_DATABASE_URL" >> $BUILDPACK_DIR/export
+fi
+
 # setting .profile.d script for database startup
 echo "-----> Copying .profile.d/00-pg-path.sh to add postgresql binaries to PATH"
 mkdir -p $BUILD_DIR/.profile.d
@@ -131,6 +138,12 @@ cat<<EOF > $BUILD_DIR/.profile.d/01-pg-env.sh
 export DATABASE_URL="$DATABASE_URL"
 EOF
 
+if [ -f "$ENV_DIR/HEROKU_CI_POSTGRES_SECONDARY_DB" ]; then
+cat<<EOF > $BUILD_DIR/.profile.d/01-pg-env.sh
+export SECONDARY_DATABASE_URL="$SECONDARY_DATABASE_URL"
+EOF
+fi
+
 cat<<EOF > $BUILDPACK_DIR/background
 PATH=$HOME/.indyno/vendor/postgresql/bin:$PATH
 export PGHOST="$PGHOST"
@@ -143,5 +156,11 @@ else
   pg_ctl -l .pg.log -w start >/dev/null
 fi
 EOF
+
+if [ -f "$ENV_DIR/HEROKU_CI_POSTGRES_SECONDARY_DB" ]; then
+cat<<EOF > $BUILDPACK_DIR/background
+export SECONDARY_DATABASE_URL="$SECONDARY_DATABASE_URL"
+EOF
+fi
 
 echo "-----> Postgresql done"
